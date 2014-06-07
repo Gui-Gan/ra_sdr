@@ -2,7 +2,7 @@ ra_sdr
 ======
 
 Programm to use a DVB-T USB Dongle as an SDR for radioastronomical test.
-It reads data for Tint time and compute the average FFT and stores in file.
+It reads data for Tint time and compute the average FFT(1024) and stores in file.
 to compile: gcc testrtl.c -o testrtl -lrtlsdr -lfftw3 -lm -Wall
 based on testrtl.c from http://www.m0dts.co.uk/files/simple_rtlsdr_fft.c
 and RAFFT2.c from http://y1pwe.co.uk/RAProgs/index.html

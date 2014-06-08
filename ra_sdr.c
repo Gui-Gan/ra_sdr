@@ -21,8 +21,10 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
+// to compile: gcc testrtl.c -o testrtl -lrtlsdr -lfftw3 -lm -Wall
 // based on testrtl.c from http://www.m0dts.co.uk/files/simple_rtlsdr_fft.c
 // and RAFFT2.c from http://y1pwe.co.uk/RAProgs/index.html
+// compiled by G.Gancio 06062014
 
 #include <complex.h>
 #include <fftw3.h>
@@ -91,7 +93,8 @@ void usage(void)
 		"\t[-d device_index (default: 0)]\n"
 		"\t[-g gain (default: 20.7)]\n"
 		"\t[-i 'kind of' integration Time in seconds (default: 1)]\n"
-                "\t[-v vervose (0 or 1, default: 0)]\n"
+		"\t[-S force sync output (default: async)]\n"		
+        "\t[-v vervose (0 or 1, default: 0)]\n"
 		"\tfilename \n\n");
 	exit(1);
 }
@@ -142,10 +145,12 @@ int main(int argc, char **argv)
 	{
 	int sample_aux;
 	double aux;
+	int n_read;
+	int sync_mode = 0;
 	uint32_t dev_index = 0;
 	uint32_t out_block_size = DEFAULT_BUF_LENGTH;
 	time_t start, stop;
-	while ((opt = getopt(argc, argv, "d:f:g:s:b:i:v:t::")) != -1) {
+	while ((opt = getopt(argc, argv, "d:f:g:s:b:i:v:t:S::")) != -1) {
 		switch (opt) {
 		case 'd':
 			dev_index = atoi(optarg);
@@ -162,9 +167,12 @@ int main(int argc, char **argv)
 		case 'i':
 			int_t=atoi(optarg);
 			break;
-                case 'v':
-                       debug=atoi(optarg);
-                        break;
+		case 'S':
+			sync_mode = 1;
+			break;			
+		case 'v':
+			   debug=atoi(optarg);
+				break;
 		default:
 			usage();
 			break;
@@ -218,19 +226,51 @@ int main(int argc, char **argv)
 		fprintf(stderr, "WARNING: Failed to enable automatic gain.\n");
 	retval = rtlsdr_set_tuner_gain(dev, gain);
 	if (retval < 0)
-		fprintf(stderr, "WARNING: Failed to set tuner gain.\n");
+		fprintf(stderr, "WARNING: Failed to set tuner gain..\n");
 	else
 		fprintf(stderr, "Tuner gain set to %f dB.\n", gain/10.0);
+	/* Reset endpoint before we start reading from it (mandatory) */ 
+	//verbose_reset_buffer(dev);		
 	//Grab some samples
 	if(debug)printf("Reading samples in async mode...\n");
 	retval = rtlsdr_reset_buffer(dev);
-	retval = rtlsdr_read_async(dev, rtlsdr_callback, (void *)file,DEFAULT_ASYNC_BUF_NUMBER, out_block_size);
+	if (sync_mode) {
+		fprintf(stderr, "Reading samples in sync mode...\n");
+		while (!do_exit) {
+			r = rtlsdr_read_sync(dev, buf, out_block_size, &n_read);
+			if (r < 0) {
+				fprintf(stderr, "WARNING: sync read failed.\n");
+				break;
+			}
+
+			if ((bytes_to_read > 0) && (bytes_to_read < (uint32_t)n_read)) {
+				n_read = bytes_to_read;
+				do_exit = 1;
+			}
+
+			if (fwrite(buf, 1, n_read, file) != (size_t)n_read) {
+				fprintf(stderr, "Short write, samples lost, exiting!\n");
+				break;
+			}
+
+			if ((uint32_t)n_read < out_block_size) {
+				fprintf(stderr, "Short read, samples lost, exiting!\n");
+				break;
+			}
+
+			if (bytes_to_read > 0)
+				bytes_to_read -= n_read;
+		}
+	} else {
+		fprintf(stderr, "Reading samples in async mode...\n");
+		retval = rtlsdr_read_async(dev, rtlsdr_callback, (void *)file,DEFAULT_ASYNC_BUF_NUMBER, out_block_size);
+	}	
 	rtlsdr_close(0);
 	// stop timer
 	out_dat();
+	free (buf);
     time(&stop);
     if(debug)printf("Finished in about %.0f seconds. \n", difftime(stop, start));
-
 	fclose(file1);
 	exit(0);
 }

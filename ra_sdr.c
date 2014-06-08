@@ -21,10 +21,8 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
-// to compile: gcc testrtl.c -o testrtl -lrtlsdr -lfftw3 -lm -Wall
 // based on testrtl.c from http://www.m0dts.co.uk/files/simple_rtlsdr_fft.c
 // and RAFFT2.c from http://y1pwe.co.uk/RAProgs/index.html
-// compiled by G.Gancio 06062014
 
 #include <complex.h>
 #include <fftw3.h>

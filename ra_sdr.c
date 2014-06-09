@@ -110,27 +110,29 @@ static void rtlsdr_callback(unsigned char *buf, uint32_t len, void *ctx)
 			len = bytes_to_read;
 			do_exit = 1;
 			rtlsdr_cancel_async(dev);
-			}
-		/*take fourier transform*/
-		pts=FFTs;
-		p_num=(len+1)/pts/2;
-		int s,ss;
-		count=0;
-		for(ss=0;ss<p_num;ss++)
-		  {
-			for(s=0;s<2*pts;s++)
-				{
-				dats[s]=(float)buf[s+(count*2*FFTs)]+0.0; 
-				if(dats[s]>127)
-					dats[s]=(dats[s]-127.5)/128.0;
-				else 
-					dats[s]=(dats[s]-127.5)/128.0;
+			/*take fourier transform*/
+			pts=FFTs;
+			p_num=(len+1)/pts/2;
+			int s,ss;
+			count=0;
+			for(ss=0;ss<p_num;ss++)
+			  {
+				for(s=0;s<2*pts;s++)
+					{
+					dats[s]=(float)buf[s+(count*2*FFTs)]+0.0; 
+					if(dats[s]>127)
+						dats[s]=(dats[s]-127.5)/128.0;
+					else 
+						dats[s]=(dats[s]-127.5)/128.0;
+					}
+					count++;
+				four(dats-1,FFTs,-1);
+				sum_dat();
 				}
-				count++;
-			four(dats-1,FFTs,-1);
-			sum_dat();
+			//End FFT routines...			
 			}
-		if (len!= len) 
+
+		if (len!= len) //dumy if
 			{
 			fprintf(stderr, "Short write, samples lost, exiting!\n");
 			rtlsdr_cancel_async(dev);
@@ -144,9 +146,10 @@ static void rtlsdr_callback(unsigned char *buf, uint32_t len, void *ctx)
 int main(int argc, char **argv)
 	{
 	int sample_aux;
-	double aux;
+	double aux,samp_aux;
 	int n_read;
 	int sync_mode = 0;
+	
 	uint32_t dev_index = 0;
 	uint32_t out_block_size = DEFAULT_BUF_LENGTH;
 	time_t start, stop;
@@ -210,7 +213,19 @@ int main(int argc, char **argv)
 		if(debug)printf("No Devices found...!");
 		exit(0);
 	}
-	buf = malloc((out_block_size) * sizeof(uint8_t));
+	if(!sync_mode)
+		buf = malloc((out_block_size) * sizeof(uint8_t));
+		else
+		{
+			samp_aux=FFTs*(1/sample_rate_aux);
+			samp_aux=(int)(sample_rate_aux/samp_aux);
+			aux=pow(2,(log10(samp_aux)/log10(2)));
+			sample_aux=(int)aux;
+			bytes_to_read=sample_aux*2;
+			out_block_size=sample_aux;
+			buf = malloc((out_block_size) * sizeof(uint8_t));
+			if(debug)printf("buffer size %zu, bytes to read %d \n",out_block_size,bytes_to_read);
+		}
 	//configure rtlsdr settings
 	retval = rtlsdr_set_sample_rate(dev, sample_rate_aux);
 	if (retval < 0)
@@ -230,7 +245,6 @@ int main(int argc, char **argv)
 	else
 		fprintf(stderr, "Tuner gain set to %f dB.\n", gain/10.0);
 	/* Reset endpoint before we start reading from it (mandatory) */ 
-	//verbose_reset_buffer(dev);		
 	//Grab some samples
 	if(debug)printf("Reading samples in async mode...\n");
 	retval = rtlsdr_reset_buffer(dev);
@@ -246,9 +260,28 @@ int main(int argc, char **argv)
 			if ((bytes_to_read > 0) && (bytes_to_read < (uint32_t)n_read)) {
 				n_read = bytes_to_read;
 				do_exit = 1;
+				/*take fourier transform*/
+				pts=FFTs;
+				p_num=(n_read+1)/pts/2;
+				int s,ss;
+				count=0;
+				for(ss=0;ss<p_num;ss++)
+				  {
+					for(s=0;s<2*pts;s++)
+						{
+						dats[s]=(float)buf[s+(count*2*FFTs)]+0.0; 
+						if(dats[s]>127)
+							dats[s]=(dats[s]-127.5)/128.0;
+						else 
+							dats[s]=(dats[s]-127.5)/128.0;
+						}
+						count++;
+					four(dats-1,FFTs,-1);
+					sum_dat();
+					}
+				//End FFT routines...				
 			}
-
-			if (fwrite(buf, 1, n_read, file) != (size_t)n_read) {
+			if ((size_t)n_read != (size_t)n_read) { //dumy if
 				fprintf(stderr, "Short write, samples lost, exiting!\n");
 				break;
 			}

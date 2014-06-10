@@ -77,8 +77,6 @@ static int do_exit = 0;
 float sample_rate_aux=DEFAULT_SAMPLE_RATE;
 FILE *file;
 char *filename = NULL;
-FILE *file1;
-char *filename1 = NULL;
 time_t start, start2, stop, stop2;
 void four(double[],int,int);
 void sum_dat(void);
@@ -89,7 +87,7 @@ void usage(void)
 	fprintf(stderr,
 		"ra_sdr, an I/Q recorder for RTL2832 based DVB-T receivers, for RadioAstronomy use. Ver 1.1, Sync Mode Only, Not Fully Tested.\n\n"
 		"Usage:\t -f frequency_to_tune_to (default 30000000 [Hz)]\n"
-		"\t[-s samplerate (default: 2000000 Hz)]\n"
+		"\t[-s samplerate (default: 2048000 Hz)]\n"
 		"\t[-d device_index (default: 0)]\n"
 		"\t[-g gain (default: 20.7)]\n"
 		"\t[-i 'kind of' integration Time in seconds (default: 1(min), steps of 1sec)]\n"
@@ -101,11 +99,8 @@ void usage(void)
 int main(int argc, char **argv)
 	{
 	int sample_aux=DEFAULT_SAMPLE_RATE;
-	double aux;
 	int n_read,reps=1,co=0;
-	
 	uint32_t dev_index = 0;
-	out_block_size = DEFAULT_BUF_LENGTH;
 	while ((opt = getopt(argc, argv, "d:f:g:s:i:v::")) != -1) {
 		switch (opt) {
 		case 'd':
@@ -142,11 +137,10 @@ int main(int argc, char **argv)
 	}
 	
 	time(&start);
-	file = fopen("tmp", "w");
-	file1 = fopen(filename, "w");
-	if (!file1)
+	file = fopen(filename, "w");
+	if (!file)
 	{
-			fprintf(stderr, "Failed to open %s\n", filename1);
+			fprintf(stderr, "Failed to open %s\n", filename);
 			return(1);
 	}
 	devices = rtlsdr_get_device_count();
@@ -243,7 +237,7 @@ int main(int argc, char **argv)
 	free (buf);
     time(&stop);
     if(debug)printf("Finished in about %.0f seconds. \n", difftime(stop, start));
-	fclose(file1);
+	fclose(file);
 	exit(0);
 }
 
@@ -320,6 +314,6 @@ for(tt=0;tt<pts;tt++)
 		opp=(float)datr[tt+pts/2];
 	else
 		opp=(float)datr[tt-pts/2];
-	fprintf(file1,"%d    %3.3f\n",(tt-pts/2),(float)(opp/p_num));
+	fprintf(file,"%d    %3.3f\n",(tt-pts/2),(float)(opp/p_num));
 	}
 }

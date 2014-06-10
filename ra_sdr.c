@@ -21,10 +21,9 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
-// to compile: gcc testrtl.c -o testrtl -lrtlsdr -lfftw3 -lm -Wall
-// based on testrtl.c from http://www.m0dts.co.uk/files/simple_rtlsdr_fft.c
+// with code from testrtl.c from http://www.m0dts.co.uk/files/simple_rtlsdr_fft.c
 // and RAFFT2.c from http://y1pwe.co.uk/RAProgs/index.html
-// compiled by G.Gancio 06062014
+
 
 #include <complex.h>
 #include <fftw3.h>
@@ -47,13 +46,13 @@ SOFTWARE.
 #include "rtl-sdr.h"
 
 #define DEF_int_t 1 
-#define DEFAULT_SAMPLE_RATE 2048000
+#define DEFAULT_SAMPLE_RATE 2.048e6
 #define DEF_Freq 30000000
 #define DEF_Gain 207
 #define FFTs 1024
 #define DEF_debug 0
 #define DEFAULT_ASYNC_BUF_NUMBER 32
-#define DEFAULT_BUF_LENGTH (16 * 16384)
+#define DEFAULT_BUF_LENGTH DEFAULT_SAMPLE_RATE*2
 #define MINIMAL_BUF_LENGTH 512
 #define MAXIMAL_BUF_LENGTH (256 * 16384)
 #define SWAP(a,b) tempr=(a); (a)=(b); (b)=tempr
@@ -72,7 +71,7 @@ uint8_t *buf;   //unsigned 8bit int - I didn't know what it was!, the _t must be
 char * fftresult;
 uint32_t frequency = DEF_Freq;
 int gain = DEF_Gain;
-static uint32_t bytes_to_read = DEF_int_t*2;
+static uint32_t bytes_to_read = DEFAULT_SAMPLE_RATE;
 uint32_t out_block_size = DEFAULT_BUF_LENGTH;
 static int do_exit = 0;
 float sample_rate_aux=DEFAULT_SAMPLE_RATE;
@@ -88,19 +87,18 @@ void out_dat(void);
 void usage(void)
 {
 	fprintf(stderr,
-		"ra_sdr, an I/Q recorder for RTL2832 based DVB-T receivers, for RadioAstronomy use. Ver 1.0, Not Fully Tested.\n\n"
+		"ra_sdr, an I/Q recorder for RTL2832 based DVB-T receivers, for RadioAstronomy use. Ver 1.1, Sync Mode Only, Not Fully Tested.\n\n"
 		"Usage:\t -f frequency_to_tune_to (default 30000000 [Hz)]\n"
-		"\t[-s samplerate (default: 2048000 Hz)]\n"
+		"\t[-s samplerate (default: 2000000 Hz)]\n"
 		"\t[-d device_index (default: 0)]\n"
 		"\t[-g gain (default: 20.7)]\n"
-		"\t[-i 'kind of' integration Time in seconds (default: 1)]\n"
-		"\t[-S force sync output (default: async)]\n"		
+		"\t[-i 'kind of' integration Time in seconds (default: 1(min), steps of 1sec)]\n"
         "\t[-v vervose ]\n"
 		"\tfilename \n\n");
 	exit(1);
 }
 
-static void rtlsdr_callback(unsigned char *buf, uint32_t len, void *ctx)
+/*static void rtlsdr_callback(unsigned char *buf, uint32_t len, void *ctx)
 {
 	if (ctx) 
 		{
@@ -113,7 +111,7 @@ static void rtlsdr_callback(unsigned char *buf, uint32_t len, void *ctx)
 			rtlsdr_cancel_async(dev);
 			time(&stop2);
                         if(debug)printf("Finished reads in about %.0f seconds. \n", difftime(stop2, start));
-			/*take fourier transform*/
+			//take fourier transform
 			pts=FFTs;
 			p_num=(len+1)/pts/2;
 			int s,ss;
@@ -143,12 +141,12 @@ static void rtlsdr_callback(unsigned char *buf, uint32_t len, void *ctx)
 		if (bytes_to_read > 0)
 		bytes_to_read -= len;
 		}
-}
+}*/
 
 
 int main(int argc, char **argv)
 	{
-	int sample_aux;
+	int sample_aux=DEFAULT_SAMPLE_RATE;
 	double aux,samp_aux;
 	int n_read,reps=1,co=0;
 	int sync_mode = 0,fft_aux=FFTs;
@@ -189,6 +187,10 @@ int main(int argc, char **argv)
 	} else {
 		filename = argv[optind];
 	}
+	if(reps <1){
+		usage();		
+	}
+	
 	time(&start);
 	file = fopen("tmp", "w");
 	file1 = fopen(filename, "w");
@@ -210,7 +212,7 @@ int main(int argc, char **argv)
 		if(debug)printf("No Devices found...!");
 		exit(0);
 	}
-	if(!sync_mode)
+	/*if(!sync_mode)
 		{
 	        sample_aux=(int)(1/((1.0/sample_rate_aux)));
         	aux=pow(2,(log10(sample_aux)/log10(2)));
@@ -226,9 +228,15 @@ int main(int argc, char **argv)
 		sample_aux=(int)aux;
 		bytes_to_read=sample_aux*fft_aux;
 		out_block_size=sample_aux*fft_aux*4;
+		
 		if(debug)printf("Sample_aux %d bytes_to_read %d block size %zu\n",sample_aux,bytes_to_read,out_block_size);
-			buf = malloc((out_block_size) * sizeof(uint8_t));
-		}
+		//buf = malloc((out_block_size) * sizeof(uint8_t));
+		}*/
+	//aux=pow(2,(int)(log10(sample_rate_aux)/log10(2)));
+	//sample_rate_aux=(int)aux;
+	bytes_to_read=sample_rate_aux; 
+	out_block_size=bytes_to_read*2;
+	buf = malloc((out_block_size) * sizeof(uint8_t));	
 	//configure rtlsdr settings
 	retval = rtlsdr_set_sample_rate(dev, sample_rate_aux);
 	if (retval < 0)
@@ -250,7 +258,7 @@ int main(int argc, char **argv)
 	/* Reset endpoint before we start reading from it (mandatory) */ 
 	//Grab some samples
 	retval = rtlsdr_reset_buffer(dev);
-	if (sync_mode) {
+	//if (sync_mode) {
 		
 		fprintf(stderr, "Reading samples in sync mode...\n");
 		for(co=0;co<reps;co++)
@@ -260,7 +268,7 @@ int main(int argc, char **argv)
 			while (!do_exit) {
 				retval = rtlsdr_reset_buffer(dev);
 				retval = rtlsdr_read_sync(dev, buf, out_block_size, &n_read);
-				if(debug)printf("Sample_aux %d bytes_to_read %d block size %zu\n",sample_aux,bytes_to_read,out_block_size);
+				if(debug)printf("Sample_aux %d bytes_to_read %d block size %zu n_reads %d\n",sample_aux,bytes_to_read,out_block_size,n_read);
 				time(&stop2);
 				if(debug)printf("Finished reads in about %.0f seconds. \n", difftime(stop2, start));
 				if (retval < 0) {
@@ -293,25 +301,25 @@ int main(int argc, char **argv)
 						}
 					//End FFT routines...				
 				}
-				if ((size_t)n_read != (size_t)n_read) { //dumy if
+				if (out_block_size!= (size_t)n_read) { 
 					fprintf(stderr, "Short write, samples lost, exiting!\n");
 					break;
 				}
 
-				if ((uint32_t)n_read < out_block_size) {
-					fprintf(stderr, "Short read, samples lost, exiting!\n");
-					break;
-				}
+				//if ((uint32_t)n_read < out_block_size) {
+				//	fprintf(stderr, "Short read, samples lost, exiting!\n");
+				//	break;
+				//}
 
-				if (bytes_to_read > 0)
-					bytes_to_read -= n_read;
+				//if (bytes_to_read > 0)
+				//	bytes_to_read -= n_read;
 				}
 			
 			}
-	} else {
-		fprintf(stderr, "Reading samples in async mode...\n");
-		retval = rtlsdr_read_async(dev, rtlsdr_callback, (void *)file,DEFAULT_ASYNC_BUF_NUMBER, out_block_size);
-	}	
+	//} else {
+	//	fprintf(stderr, "Reading samples in async mode...\n");
+	//	retval = rtlsdr_read_async(dev, rtlsdr_callback, (void *)file,DEFAULT_ASYNC_BUF_NUMBER, out_block_size);
+	//}	
 	rtlsdr_close(0);
 	// stop timer
 	out_dat();

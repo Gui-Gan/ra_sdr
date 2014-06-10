@@ -79,7 +79,7 @@ FILE *file;
 char *filename = NULL;
 FILE *file1;
 char *filename1 = NULL;
-time_t start, stop, stop2;
+time_t start, start2, stop, stop2;
 void four(double[],int,int);
 void sum_dat(void);
 void out_dat(void);
@@ -98,62 +98,15 @@ void usage(void)
 	exit(1);
 }
 
-/*static void rtlsdr_callback(unsigned char *buf, uint32_t len, void *ctx)
-{
-	if (ctx) 
-		{
-		if (do_exit)
-			return;
-		if ((bytes_to_read > 0) && (bytes_to_read < len)) 
-			{
-			len = bytes_to_read;
-			do_exit = 1;
-			rtlsdr_cancel_async(dev);
-			time(&stop2);
-                        if(debug)printf("Finished reads in about %.0f seconds. \n", difftime(stop2, start));
-			//take fourier transform
-			pts=FFTs;
-			p_num=(len+1)/pts/2;
-			int s,ss;
-			count=0;
-			for(ss=0;ss<p_num;ss++)
-			  {
-				for(s=0;s<2*pts;s++)
-					{
-					dats[s]=(float)buf[s+(count*2*FFTs)]+0.0; 
-					if(dats[s]>127)
-						dats[s]=(dats[s]-127.5)/128.0;
-					else 
-						dats[s]=(dats[s]-127.5)/128.0;
-					}
-					count++;
-				four(dats-1,FFTs,-1);
-				sum_dat();
-				}
-			//End FFT routines...			
-			}
-
-		if (len!= len) //dumy if
-			{
-			fprintf(stderr, "Short write, samples lost, exiting!\n");
-			rtlsdr_cancel_async(dev);
-			}
-		if (bytes_to_read > 0)
-		bytes_to_read -= len;
-		}
-}*/
-
-
 int main(int argc, char **argv)
 	{
 	int sample_aux=DEFAULT_SAMPLE_RATE;
-	double aux,samp_aux;
+	double aux;
 	int n_read,reps=1,co=0;
-	int sync_mode = 0,fft_aux=FFTs;
 	
 	uint32_t dev_index = 0;
 	out_block_size = DEFAULT_BUF_LENGTH;
-	while ((opt = getopt(argc, argv, "d:f:g:s:b:i:v::t:S::")) != -1) {
+	while ((opt = getopt(argc, argv, "d:f:g:s:i:v::")) != -1) {
 		switch (opt) {
 		case 'd':
 			dev_index = atoi(optarg);
@@ -170,9 +123,6 @@ int main(int argc, char **argv)
 		case 'i':
 			reps=atoi(optarg);
 			break;
-		case 'S':
-			sync_mode = 1;
-			break;			
 		case 'v':
 			   debug=1;
 				break;
@@ -212,28 +162,6 @@ int main(int argc, char **argv)
 		if(debug)printf("No Devices found...!");
 		exit(0);
 	}
-	/*if(!sync_mode)
-		{
-	        sample_aux=(int)(1/((1.0/sample_rate_aux)));
-        	aux=pow(2,(log10(sample_aux)/log10(2)));
-	        sample_aux=(int)aux;
-	        bytes_to_read=sample_aux*2;
-	        if(debug)printf("Sample_aux %d bytes_to_read %d block size %zu\n",sample_aux,bytes_to_read,out_block_size);
-			buf = malloc((out_block_size) * sizeof(uint8_t));
-		}
-		else
-		{
-		sample_aux=(int)(1/(fft_aux*(1.0/sample_rate_aux)));
-		aux=pow(2,(log10(sample_aux)/log10(2))-1);
-		sample_aux=(int)aux;
-		bytes_to_read=sample_aux*fft_aux;
-		out_block_size=sample_aux*fft_aux*4;
-		
-		if(debug)printf("Sample_aux %d bytes_to_read %d block size %zu\n",sample_aux,bytes_to_read,out_block_size);
-		//buf = malloc((out_block_size) * sizeof(uint8_t));
-		}*/
-	//aux=pow(2,(int)(log10(sample_rate_aux)/log10(2)));
-	//sample_rate_aux=(int)aux;
 	bytes_to_read=sample_rate_aux; 
 	out_block_size=bytes_to_read*2;
 	buf = malloc((out_block_size) * sizeof(uint8_t));	
@@ -257,69 +185,58 @@ int main(int argc, char **argv)
 		fprintf(stderr, "Tuner gain set to %f dB.\n", gain/10.0);
 	/* Reset endpoint before we start reading from it (mandatory) */ 
 	//Grab some samples
-	retval = rtlsdr_reset_buffer(dev);
-	//if (sync_mode) {
-		
-		fprintf(stderr, "Reading samples in sync mode...\n");
-		for(co=0;co<reps;co++)
+	fprintf(stderr, "Reading samples in sync mode...\n");
+	for(co=0;co<reps;co++)
 		{
 		do_exit=0;
-			if(debug)printf("reps %d\n",co);
-			while (!do_exit) {
-				retval = rtlsdr_reset_buffer(dev);
-				retval = rtlsdr_read_sync(dev, buf, out_block_size, &n_read);
-				if(debug)printf("Sample_aux %d bytes_to_read %d block size %zu n_reads %d\n",sample_aux,bytes_to_read,out_block_size,n_read);
-				time(&stop2);
-				if(debug)printf("Finished reads in about %.0f seconds. \n", difftime(stop2, start));
-				if (retval < 0) {
-					fprintf(stderr, "WARNING: sync read failed.\n");
-					break;
+		if(debug)printf("reps %d\n",co);
+		while (!do_exit) 
+			{
+			time(&start2);
+			retval = rtlsdr_reset_buffer(dev);
+			retval = rtlsdr_read_sync(dev, buf, out_block_size, &n_read);
+			time(&stop2);
+			if(debug)printf("Sample_aux %d bytes_to_read %d block size %zu n_reads %d\n",sample_aux,bytes_to_read,out_block_size,n_read);
+			if(debug)printf("Finished reads in about %.0f seconds. \n", difftime(stop2, start2));
+			if(debug)printf("Finished total reads in about %.0f seconds. \n", difftime(stop2, start));
+			if (retval < 0) 
+				{
+				fprintf(stderr, "WARNING: sync read failed.\n");
+				break;
 				}
-
-				if ((bytes_to_read > 0) && (bytes_to_read < (uint32_t)n_read)) {
-					if(debug)printf("End sync read\n");
-					n_read = bytes_to_read;
-					do_exit = 1;
-					/*take fourier transform*/
-					pts=FFTs;
-					p_num=(n_read+1)/pts/2;
-					int s,ss;
-					count=0;
-					for(ss=0;ss<p_num;ss++)
-					  {
-						for(s=0;s<2*pts;s++)
-							{
-							dats[s]=(float)buf[s+(count*2*FFTs)]+0.0; 
-							if(dats[s]>127)
-								dats[s]=(dats[s]-127.5)/128.0;
-							else 
-								dats[s]=(dats[s]-127.5)/128.0;
-							}
-							count++;
-						four(dats-1,FFTs,-1);
-						sum_dat();
+			if ((bytes_to_read > 0) && (bytes_to_read < (uint32_t)n_read)) 
+				{
+				if(debug)printf("End sync read\n");
+				n_read = bytes_to_read;
+				do_exit = 1;
+				/*take fourier transform*/
+				pts=FFTs;
+				p_num=(n_read+1)/pts/2;
+				int s,ss;
+				count=0;
+				for(ss=0;ss<p_num;ss++)
+					{
+					for(s=0;s<2*pts;s++)
+						{
+						dats[s]=(float)buf[s+(count*2*FFTs)]+0.0; 
+						if(dats[s]>127)
+							dats[s]=(dats[s]-127.5)/128.0;
+						else 
+							dats[s]=(dats[s]-127.5)/128.0;
 						}
+					count++;
+					four(dats-1,FFTs,-1);
+					sum_dat();
+					}
 					//End FFT routines...				
 				}
-				if (out_block_size!= (size_t)n_read) { 
-					fprintf(stderr, "Short write, samples lost, exiting!\n");
-					break;
+			if ((bytes_to_read)!= (uint32_t)n_read) 
+				{ 
+				fprintf(stderr, "Short write, samples lost, exiting!\n");
+				break;
 				}
-
-				//if ((uint32_t)n_read < out_block_size) {
-				//	fprintf(stderr, "Short read, samples lost, exiting!\n");
-				//	break;
-				//}
-
-				//if (bytes_to_read > 0)
-				//	bytes_to_read -= n_read;
-				}
-			
 			}
-	//} else {
-	//	fprintf(stderr, "Reading samples in async mode...\n");
-	//	retval = rtlsdr_read_async(dev, rtlsdr_callback, (void *)file,DEFAULT_ASYNC_BUF_NUMBER, out_block_size);
-	//}	
+		}
 	rtlsdr_close(0);
 	// stop timer
 	out_dat();
@@ -332,7 +249,6 @@ int main(int argc, char **argv)
 
 /*fast fourier transform routine*/
 void four( double data[], int nn,int isign)
-
 {
  int n,mmax,m,j,istep,i,a;
  double wtemp,wr,wpr,wpi,wi,theta;

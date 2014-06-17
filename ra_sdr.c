@@ -90,7 +90,7 @@ void usage(void)
 		"\t[-s samplerate (default: 2048000 Hz)]\n"
 		"\t[-d device_index (default: 0)]\n"
 		"\t[-g gain (default: 20.7)]\n"
-		"\t[-i 'kind of' integration Time in seconds (default: 1(min), steps of 1sec)]\n"
+		"\t[-i 'kind of' integration Time in seconds (default: 1, steps of 1sec)]\n"
         "\t[-v vervose ]\n"
 		"\tfilename \n\n");
 	exit(1);
@@ -151,7 +151,7 @@ int main(int argc, char **argv)
 	}
 	if (devices>0){
 		retval = rtlsdr_open(&dev, dev_index);	
-		if(debug)printf("Open= %d\n",retval);
+		if(debug)printf("Open= %d\n",dev_index);
 	}else{
 		if(debug)printf("No Devices found...!");
 		exit(0);

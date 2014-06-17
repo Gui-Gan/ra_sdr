@@ -63,18 +63,18 @@ int xx,r,pts,a,int_t=DEF_int_t,debug=DEF_debug;
 int flag=0,da[FFTs*2];
 long int file_end,count,p_num;
 double dats[FFTs*4],datr[FFTs*4],sig_pow,nois_pow;
-int retval,opt;
+int retval,opt,aux_rep=1;
 int devices;
 static rtlsdr_dev_t *dev;
 int n;
 uint8_t *buf;   //unsigned 8bit int - I didn't know what it was!, the _t must be 'type'
 char * fftresult;
-uint32_t frequency = DEF_Freq;
-int gain = DEF_Gain;
+uint32_t frequency = DEF_Freq,aux_frequency=0;
+int gain = DEF_Gain,aux_gain=0;
 static uint32_t bytes_to_read = DEFAULT_SAMPLE_RATE;
 uint32_t out_block_size = DEFAULT_BUF_LENGTH;
 static int do_exit = 0;
-float sample_rate_aux=DEFAULT_SAMPLE_RATE;
+float sample_rate_aux=DEFAULT_SAMPLE_RATE,aux_sample_rate=0;
 FILE *file;
 char *filename = NULL;
 time_t start, start2, stop, stop2;
@@ -99,8 +99,10 @@ void usage(void)
 int main(int argc, char **argv)
 	{
 	int sample_aux=DEFAULT_SAMPLE_RATE;
-	int n_read,reps=1,co=0;
+	int n_read,co=0,reps=1;
 	uint32_t dev_index = 0;
+   time_t now = time(NULL);
+   struct tm *t = localtime(&now);
 	while ((opt = getopt(argc, argv, "d:f:g:s:i:v::")) != -1) {
 		switch (opt) {
 		case 'd':
@@ -143,8 +145,9 @@ int main(int argc, char **argv)
 			fprintf(stderr, "Failed to open %s\n", filename);
 			return(1);
 	}
-	devices = rtlsdr_get_device_count();
 
+	devices = rtlsdr_get_device_count();
+	aux_rep=reps;
 	for(n=0;n<devices;n++)
 	{
 		if(debug)printf("Device %d: %s\n\n",devices,rtlsdr_get_device_name(n));
@@ -177,6 +180,16 @@ int main(int argc, char **argv)
 		fprintf(stderr, "WARNING: Failed to set tuner gain..\n");
 	else
 		fprintf(stderr, "Tuner gain set to %f dB.\n", gain/10.0);
+	//Get configuration
+	aux_frequency=rtlsdr_get_center_freq(dev);
+	aux_gain=rtlsdr_get_tuner_gain(dev);	
+	aux_sample_rate=rtlsdr_get_sample_rate(dev);
+        fprintf(file,"#FREQ %zu\n",aux_frequency );
+        fprintf(file,"#GAIN %f\n",aux_gain/10.0 );
+        fprintf(file,"#SAMP %f\n",aux_sample_rate );
+        fprintf(file,"#DATE %d%02d%02d\n",t->tm_year+1900,t->tm_mon+1,t->tm_mday);
+        fprintf(file,"#TIME %02d%02d%02d\n",t->tm_hour,t->tm_min,t->tm_sec);
+        fprintf(file,"#REPS %d\n",reps);
 	/* Reset endpoint before we start reading from it (mandatory) */ 
 	//Grab some samples
 	fprintf(stderr, "Reading samples in sync mode...\n");
@@ -307,6 +320,9 @@ void out_dat(void)
 {
 int tt;
 float opp;
+uint32_t f_init,f_step;
+f_init=aux_frequency-(aux_sample_rate/2);
+f_step=aux_sample_rate/pts;
 if(debug)printf("OUT to FILE\n");
 for(tt=0;tt<pts;tt++)
 	{
@@ -314,6 +330,7 @@ for(tt=0;tt<pts;tt++)
 		opp=(float)datr[tt+pts/2];
 	else
 		opp=(float)datr[tt-pts/2];
-	fprintf(file,"%d    %3.3f\n",(tt-pts/2),(float)(opp/p_num));
+	fprintf(file,"%zu    %3.3f\n",f_init,((float)(opp/p_num))/aux_rep); //(tt-pts/2)
+	f_init=f_init+f_step;
 	}
 }

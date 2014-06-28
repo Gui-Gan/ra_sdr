@@ -45,6 +45,7 @@ SOFTWARE.
 #endif
 #include "rtl-sdr.h"
 
+#define LONGITUDE -58.45
 #define DEF_int_t 1 
 #define DEFAULT_SAMPLE_RATE 2.048e6
 #define DEF_Freq 30000000
@@ -58,6 +59,7 @@ SOFTWARE.
 #define SWAP(a,b) tempr=(a); (a)=(b); (b)=tempr
 #define PI (6.28318530717959/2.0)
 
+float longitud=LONGITUDE;
 float yy,rr,rrr,rav,amp;
 int xx,r,pts,a,int_t=DEF_int_t,debug=DEF_debug;
 int flag=0,da[FFTs*2];
@@ -78,9 +80,13 @@ float sample_rate_aux=DEFAULT_SAMPLE_RATE,aux_sample_rate=0;
 FILE *file;
 char *filename = NULL;
 time_t start, start2, stop, stop2;
+int  s_hour, s_min, s_sec;
+double s_t;
+
 void four(double[],int,int);
 void sum_dat(void);
 void out_dat(void);
+void zenith_sideraltime(void);
 
 void usage(void)
 {
@@ -190,6 +196,9 @@ int main(int argc, char **argv)
         fprintf(file,"#DATE %d%02d%02d\n",t->tm_year+1900,t->tm_mon+1,t->tm_mday);
         fprintf(file,"#TIME %02d%02d%02d\n",t->tm_hour,t->tm_min,t->tm_sec);
         fprintf(file,"#REPS %d\n",reps);
+    zenith_sideraltime();
+	fprintf(file,"#LST[ZENITH] %02d%02d%02d\n",s_hour,s_min,s_sec);
+	fprintf(file,"#LSA[ZENITH] %03.03f\n",s_t);    
 	/* Reset endpoint before we start reading from it (mandatory) */ 
 	//Grab some samples
 	fprintf(stderr, "Reading samples in sync mode...\n");
@@ -333,4 +342,85 @@ for(tt=0;tt<pts;tt++)
 	fprintf(file,"%zu    %3.3f\n",f_init,((float)(opp/p_num))/aux_rep); //(tt-pts/2)
 	f_init=f_init+f_step;
 	}
+}
+
+
+void zenith_sideraltime(void)
+{
+	int year, month, day;
+	int  hour, min, sec;
+	int TZ=-3;
+	//Long + at East and - at West of Greenwich
+	double julian;
+	float jdsince1900;
+	double t, tsg;
+	//const 	jd1900jan0 = 1900 JAN 0 Julian date
+	double jd1900jan0= 2415020.0;
+
+	//GMT Time
+	time_t now=time(NULL);
+	struct tm *tm=localtime(&now);
+	year = tm->tm_year + 1900;
+	month =tm->tm_mon + 1;
+	day= tm->tm_mday;
+	hour=(tm->tm_hour);
+	min=tm->tm_min;
+	sec= tm->tm_sec ;
+	hour=(tm->tm_hour)-TZ;
+	if (hour > 23 )
+		hour=hour-24;
+	if (hour <3)
+		day=day+1;
+	// Julian day at 0h GMT of Greenwich
+	julian = (4712+year)*365.25;
+	if (julian == floor(julian))
+	julian = julian-1;
+	else
+	julian = floor(julian);
+	julian=julian-13;
+	//Day of Year
+	julian=julian + day;
+	if (month > 1)
+	julian=julian+31;
+	if (month > 2)
+	julian=julian+28;
+	if (month > 3)
+	julian=julian+31;
+	if (month > 4)
+	julian=julian+30;
+	if (month > 5)
+	julian=julian+31;
+	if (month > 6)
+	julian=julian+30;
+	if (month > 7)
+	julian=julian+31;
+	if (month > 8)
+	julian=julian+31;
+	if (month > 9)
+	julian=julian+30;
+	if (month > 10)
+	julian=julian+31;
+	if (month > 11)
+	julian=julian+30;
+
+	if(year == (floor(year/4)*4) && (month > 1))
+	julian=julian + 1;
+
+	julian=julian - .5;
+	jdsince1900=julian-jd1900jan0;
+
+	t=jdsince1900/36525;
+	tsg=6.64606 + 2400.05126 * t + 2.58055e-5 * t * t;
+	tsg=tsg+longitud/15.0;
+	tsg = tsg + (hour+min/60.0+sec/3600.0)*1.002737909265;
+	t = tsg - floor(tsg/24)*24;
+	s_hour = floor(t);
+	s_min = floor((t-s_hour)*60);
+	s_sec = ((t - s_hour - s_min/60.0)*3600);
+	s_t=t*15;
+
+	if(debug)printf("\n Local sidereal time %02d h, %02d m, %02d  s", s_hour, s_min, s_sec);
+	if(debug)printf("\n Local sidereal Anlge %03.03f ", s_t);
+	if(debug)printf("\n ");
+/* end */
 }

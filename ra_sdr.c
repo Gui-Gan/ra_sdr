@@ -50,7 +50,7 @@ SOFTWARE.
 #define DEFAULT_SAMPLE_RATE 2.048e6
 #define DEF_Freq 30000000
 #define DEF_Gain 207
-#define FFTs 1024
+#define FFTs 1024*2
 #define DEF_debug 0
 #define DEFAULT_ASYNC_BUF_NUMBER 32
 #define DEFAULT_BUF_LENGTH DEFAULT_SAMPLE_RATE*2
@@ -79,6 +79,10 @@ static int do_exit = 0;
 float sample_rate_aux=DEFAULT_SAMPLE_RATE,aux_sample_rate=0;
 FILE *file;
 char *filename = NULL;
+FILE *file2;
+char filename2[];
+char *filename3 = NULL;
+
 time_t start, start2, stop, stop2;
 int  s_hour, s_min, s_sec;
 double s_t;
@@ -87,7 +91,7 @@ void four(double[],int,int);
 void sum_dat(void);
 void out_dat(void);
 void zenith_sideraltime(void);
-
+void tpow(void);
 void usage(void)
 {
 	fprintf(stderr,
@@ -105,7 +109,7 @@ void usage(void)
 int main(int argc, char **argv)
 	{
 	int sample_aux=DEFAULT_SAMPLE_RATE;
-	int n_read,co=0,reps=1;
+	int n_read,co=0,reps=1,len=0;
 	uint32_t dev_index = 0;
    time_t now = time(NULL);
    struct tm *t = localtime(&now);
@@ -130,7 +134,7 @@ int main(int argc, char **argv)
 			   debug=1;
 				break;
 		default:
-			usage();
+		usage();
 			break;
 		}
 	}
@@ -145,13 +149,28 @@ int main(int argc, char **argv)
 	}
 	
 	time(&start);
-	file = fopen(filename, "w");
-	if (!file)
-	{
-			fprintf(stderr, "Failed to open %s\n", filename);
-			return(1);
-	}
 
+
+	if(debug)printf("file 1 %s\n",filename);
+	len = strlen(filename);
+	strncpy(filename2, filename,len-4);
+	strcat(filename2,"_TP.txt");
+filename3 = malloc(sizeof(char) * strlen(filename2));
+strcpy(filename3,filename2);	
+	if(debug)printf("file 2 %s\n",filename3);
+        file = fopen(filename, "w");
+        if (!file)
+        {
+                        fprintf(stderr, "Failed to open %s\n", filename);
+                        return(1);
+        }
+
+	file2 = fopen(filename3, "w");
+        if (!file2)
+        {
+                        fprintf(stderr, "Failed to open %s\n", filename3);
+                        return(1);
+        }
 	devices = rtlsdr_get_device_count();
 	aux_rep=reps;
 	for(n=0;n<devices;n++)
@@ -190,15 +209,24 @@ int main(int argc, char **argv)
 	aux_frequency=rtlsdr_get_center_freq(dev);
 	aux_gain=rtlsdr_get_tuner_gain(dev);	
 	aux_sample_rate=rtlsdr_get_sample_rate(dev);
-        fprintf(file,"#FREQ %zu\n",aux_frequency );
-        fprintf(file,"#GAIN %f\n",aux_gain/10.0 );
-        fprintf(file,"#SAMP %f\n",aux_sample_rate );
+	zenith_sideraltime();
+        fprintf(file,"#FRE[Hz] %zu\n",aux_frequency );
+        fprintf(file,"#GAIN[dB] %f\n",aux_gain/10.0 );
+        fprintf(file,"#SAMP[Hz] %f\n",aux_sample_rate );
         fprintf(file,"#DATE %d%02d%02d\n",t->tm_year+1900,t->tm_mon+1,t->tm_mday);
         fprintf(file,"#TIME %02d%02d%02d\n",t->tm_hour,t->tm_min,t->tm_sec);
-        fprintf(file,"#REPS %d\n",reps);
-    zenith_sideraltime();
+        fprintf(file,"#REPS[n] %d\n",reps);
+	fprintf(file,"#FFT %d\n",FFTs);
 	fprintf(file,"#LST[ZENITH] %02d%02d%02d\n",s_hour,s_min,s_sec);
 	fprintf(file,"#LSA[ZENITH] %03.03f\n",s_t);    
+        fprintf(file2,"#FREQ[Hz] %zu\n",aux_frequency );
+        fprintf(file2,"#GAIN[dB] %f\n",aux_gain/10.0 );
+        fprintf(file2,"#SAMP[Hz] %f\n",aux_sample_rate );
+        fprintf(file2,"#DATE %d%02d%02d\n",t->tm_year+1900,t->tm_mon+1,t->tm_mday);
+        fprintf(file2,"#TIME %02d%02d%02d\n",t->tm_hour,t->tm_min,t->tm_sec);
+        fprintf(file2,"#REPS[n] %d\n",reps);
+        fprintf(file2,"#LST[ZENITH] %02d%02d%02d\n",s_hour,s_min,s_sec);
+        fprintf(file2,"#LSA[ZENITH] %03.03f\n",s_t);
 	/* Reset endpoint before we start reading from it (mandatory) */ 
 	//Grab some samples
 	fprintf(stderr, "Reading samples in sync mode...\n");
@@ -212,6 +240,7 @@ int main(int argc, char **argv)
 			retval = rtlsdr_reset_buffer(dev);
 			retval = rtlsdr_read_sync(dev, buf, out_block_size, &n_read);
 			time(&stop2);
+			tpow();	
 			if(debug)printf("Sample_aux %d bytes_to_read %d block size %zu n_reads %d\n",sample_aux,bytes_to_read,out_block_size,n_read);
 			if(debug)printf("Finished reads in about %.0f seconds. \n", difftime(stop2, start2));
 			if(debug)printf("Finished total reads in about %.0f seconds. \n", difftime(stop2, start));
@@ -260,6 +289,8 @@ int main(int argc, char **argv)
     time(&stop);
     if(debug)printf("Finished in about %.0f seconds. \n", difftime(stop, start));
 	fclose(file);
+	fclose(file2);
+	//free(buf);
 	exit(0);
 }
 
@@ -328,7 +359,7 @@ datr[tt]=datr[tt]+(float) (dats[2*tt]*dats[2*tt]+dats[2*tt+1]*dats[2*tt+1]);
 void out_dat(void)
 {
 int tt;
-float opp;
+float opp,aux=0;
 uint32_t f_init,f_step;
 f_init=aux_frequency-(aux_sample_rate/2);
 f_step=aux_sample_rate/pts;
@@ -339,7 +370,9 @@ for(tt=0;tt<pts;tt++)
 		opp=(float)datr[tt+pts/2];
 	else
 		opp=(float)datr[tt-pts/2];
-	fprintf(file,"%zu    %3.3f\n",f_init,((float)(opp/p_num))/aux_rep); //(tt-pts/2)
+	aux=((float)(opp/p_num))/aux_rep;
+	if(finite(aux))
+		fprintf(file,"%zu\t%3.3f\n",f_init,aux); //(tt-pts/2)
 	f_init=f_init+f_step;
 	}
 }
@@ -424,3 +457,37 @@ void zenith_sideraltime(void)
 	if(debug)printf("\n ");
 /* end */
 }
+
+void tpow(void)
+{
+int i=0;
+double long avg_tp=0;
+double *aux1;   
+aux1 = malloc((out_block_size) * sizeof(double));
+
+double *aux2;   
+aux2 = malloc((out_block_size/2) * sizeof(double));
+
+for(i=0;i<out_block_size;i++)
+	{
+	aux1[i]=(float)buf[i]+0.0;
+	if(aux1[i]>127)
+	        aux1[i]=(aux1[i]-127.5)/128.0;
+        else
+                aux1[i]=(aux1[i]-127.5)/128.0;
+	}
+for(i=0;i<out_block_size/2;i++)
+	{
+	aux2[i]=sqrt(pow(aux1[i],2)+pow(aux1[i+1],2));
+	avg_tp=avg_tp+aux2[i];
+	i++;
+	}
+	
+avg_tp=avg_tp/(out_block_size/2);
+if(debug)printf("Total power relative value avg %Lf - %d of %d\n",avg_tp,i,out_block_size);
+if(finite(avg_tp))
+        fprintf(file2,"%Lf\n",avg_tp);
+free(aux1);
+free(aux2);
+}
+

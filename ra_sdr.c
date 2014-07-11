@@ -359,7 +359,7 @@ datr[tt]=datr[tt]+(float) (dats[2*tt]*dats[2*tt]+dats[2*tt+1]*dats[2*tt+1]);
 void out_dat(void)
 {
 int tt;
-float opp,aux=0;
+float opp,aux=0,aux1=0;
 uint32_t f_init,f_step;
 f_init=aux_frequency-(aux_sample_rate/2);
 f_step=aux_sample_rate/pts;
@@ -372,7 +372,15 @@ for(tt=0;tt<pts;tt++)
 		opp=(float)datr[tt-pts/2];
 	aux=((float)(opp/p_num))/aux_rep;
 	if(finite(aux))
+		{
 		fprintf(file,"%zu\t%3.3f\n",f_init,aux); //(tt-pts/2)
+		aux1=aux;
+		}
+	else
+		{
+		aux=aux1;
+		fprintf(file,"%zu\t%3.3f\n",f_init,aux); //(tt-pts/2)
+		}
 	f_init=f_init+f_step;
 	}
 }

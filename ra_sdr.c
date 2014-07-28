@@ -45,12 +45,17 @@ SOFTWARE.
 #endif
 #include "rtl-sdr.h"
 
+#define EEPROM_SIZE 256
+#define MAX_STR_SIZE 256
+#define STR_OFFSET 0x09
+
 #define LONGITUDE -58.45
 #define DEF_int_t 1 
 #define DEFAULT_SAMPLE_RATE 2.048e6
 #define DEF_Freq 30000000
 #define DEF_Gain 207
 #define FFTs 1024*2
+#define PPM 1
 #define DEF_debug 0
 #define DEFAULT_ASYNC_BUF_NUMBER 32
 #define DEFAULT_BUF_LENGTH DEFAULT_SAMPLE_RATE*2
@@ -58,6 +63,17 @@ SOFTWARE.
 #define MAXIMAL_BUF_LENGTH (256 * 16384)
 #define SWAP(a,b) tempr=(a); (a)=(b); (b)=tempr
 #define PI (6.28318530717959/2.0)
+
+typedef struct rtlsdr_config {
+	uint16_t vendor_id;
+	uint16_t product_id;
+	char manufacturer[MAX_STR_SIZE];
+	char product[MAX_STR_SIZE];
+	char serial[MAX_STR_SIZE];
+	int have_serial;
+	int enable_ir;
+	int remote_wakeup;
+	} rtlsdr_config_t;
 
 float longitud=LONGITUDE;
 float yy,rr,rrr,rav,amp;
@@ -82,7 +98,10 @@ char *filename = NULL;
 FILE *file2;
 char filename2[];
 char *filename3 = NULL;
-
+FILE *file_raw;
+char filename_raw1[];
+char *filename_raw2 = NULL;
+int ppm_aux=PPM;
 time_t start, start2, stop, stop2;
 int  s_hour, s_min, s_sec;
 double s_t;
@@ -92,15 +111,21 @@ void sum_dat(void);
 void out_dat(void);
 void zenith_sideraltime(void);
 void tpow(void);
+void dump_config(rtlsdr_config_t *conf);
+void dump_config(rtlsdr_config_t *conf);
+int get_string_descriptor(int pos, uint8_t *data, char *str);
+int parse_eeprom_to_conf(rtlsdr_config_t *conf, uint8_t *dat);
 void usage(void)
 {
 	fprintf(stderr,
 		"ra_sdr, an I/Q recorder for RTL2832 based DVB-T receivers, for RadioAstronomy use. Ver 1.1, Sync Mode Only, Not Fully Tested.\n\n"
 		"Usage:\t -f frequency_to_tune_to (default 30000000 [Hz)]\n"
-		"\t[-s samplerate (default: 2048000 Hz)]\n"
-		"\t[-d device_index (default: 0)]\n"
-		"\t[-g gain (default: 20.7)]\n"
-		"\t[-i 'kind of' integration Time in seconds (default: 1, steps of 1sec)]\n"
+		"\t[-s samplerate (int default: 2048000 Hz)]\n"
+		"\t[-d device_index (int default: 0)]\n"
+		"\t[-g gain (float default: 20.7)]\n"
+		"\t[-p PPM set (int default: 0)]\n"
+		"\t[-r RAW outpur to file with extension .bin]\n"
+		"\t[-i 'kind of' integration Time in seconds (int default: 1, steps of 1sec)]\n"
         "\t[-v vervose ]\n"
 		"\tfilename \n\n");
 	exit(1);
@@ -108,12 +133,17 @@ void usage(void)
 
 int main(int argc, char **argv)
 	{
-	int sample_aux=DEFAULT_SAMPLE_RATE;
+	//char *manuf_str = NULL;
+	//char *product_str = NULL;
+	//char *serial_str = NULL;
+	uint8_t buf1[EEPROM_SIZE];
+	rtlsdr_config_t conf;
+	int sample_aux=DEFAULT_SAMPLE_RATE,raw_out=0;
 	int n_read,co=0,reps=1,len=0;
 	uint32_t dev_index = 0;
-   time_t now = time(NULL);
-   struct tm *t = localtime(&now);
-	while ((opt = getopt(argc, argv, "d:f:g:s:i:v::")) != -1) {
+	time_t now = time(NULL);
+	struct tm *t = localtime(&now);
+	while ((opt = getopt(argc, argv, "d:f:g:s:i:p:r::v::")) != -1) {
 		switch (opt) {
 		case 'd':
 			dev_index = atoi(optarg);
@@ -130,6 +160,13 @@ int main(int argc, char **argv)
 		case 'i':
 			reps=atoi(optarg);
 			break;
+                case 'p':
+                        ppm_aux=atoi(optarg);
+                        break;
+                case 'r':
+                        raw_out=1;
+                        break;
+
 		case 'v':
 			   debug=1;
 				break;
@@ -155,8 +192,8 @@ int main(int argc, char **argv)
 	len = strlen(filename);
 	strncpy(filename2, filename,len-4);
 	strcat(filename2,"_TP.txt");
-filename3 = malloc(sizeof(char) * strlen(filename2));
-strcpy(filename3,filename2);	
+	filename3 = malloc(sizeof(char) * strlen(filename2));
+	strcpy(filename3,filename2);	
 	if(debug)printf("file 2 %s\n",filename3);
         file = fopen(filename, "w");
         if (!file)
@@ -171,6 +208,20 @@ strcpy(filename3,filename2);
                         fprintf(stderr, "Failed to open %s\n", filename3);
                         return(1);
         }
+	if(raw_out)
+	{
+	        strncpy(filename_raw1, filename,len-4);
+	        strcat(filename_raw1,"_raw.bin");
+        	filename_raw2 = malloc(sizeof(char) * strlen(filename_raw1));
+	        strcpy(filename_raw2,filename_raw1);		
+		if(debug)printf("file 3 %s\n",filename_raw2);
+	        file_raw = fopen(filename_raw2, "wb");
+	        if (!file_raw)
+	        {
+                        fprintf(stderr, "Failed to open %s\n", filename_raw2);
+                        return(1);
+	        }
+	}
 	devices = rtlsdr_get_device_count();
 	aux_rep=reps;
 	for(n=0;n<devices;n++)
@@ -184,10 +235,31 @@ strcpy(filename3,filename2);
 		if(debug)printf("No Devices found...!");
 		exit(0);
 	}
+	retval = rtlsdr_read_eeprom(dev, buf1, 0, EEPROM_SIZE);
+	if (retval < 0) 
+	{
+		if (retval == -3)
+			{
+			if(debug)printf("No EEPROM has been found.\n");
+			}
+			else
+			{
+			if(debug)printf("Failed to read EEPROM, err %i.\n", r);
+			}
+		exit(0);
+	}
+	parse_eeprom_to_conf(&conf, buf1);
+	if(debug)dump_config(&conf);
 	bytes_to_read=sample_rate_aux; 
 	out_block_size=bytes_to_read*2;
 	buf = malloc((out_block_size) * sizeof(uint8_t));	
 	//configure rtlsdr settings
+	retval = rtlsdr_set_freq_correction(dev, ppm_aux);
+        if (retval < 0)
+                fprintf(stderr, "WARNING: Failed to set PPM..\n");
+        else
+                fprintf(stderr, "PPM set to %i .\n", ppm_aux);
+
 	retval = rtlsdr_set_sample_rate(dev, sample_rate_aux);
 	if (retval < 0)
 		fprintf(stderr, "WARNING: Failed to set sample rate.\n");
@@ -209,6 +281,7 @@ strcpy(filename3,filename2);
 	aux_frequency=rtlsdr_get_center_freq(dev);
 	aux_gain=rtlsdr_get_tuner_gain(dev);	
 	aux_sample_rate=rtlsdr_get_sample_rate(dev);
+	ppm_aux=rtlsdr_get_freq_correction(dev);
 	zenith_sideraltime();
         fprintf(file,"#FRE[Hz] %zu\n",aux_frequency );
         fprintf(file,"#GAIN[dB] %f\n",aux_gain/10.0 );
@@ -219,6 +292,9 @@ strcpy(filename3,filename2);
 	fprintf(file,"#FFT %d\n",FFTs);
 	fprintf(file,"#LST[ZENITH] %02d%02d%02d\n",s_hour,s_min,s_sec);
 	fprintf(file,"#LSA[ZENITH] %03.03f\n",s_t);    
+	fprintf(file,"#PPM %d\n",ppm_aux);
+	fprintf(file,"#SERIAL %s\n",conf.serial);
+
         fprintf(file2,"#FREQ[Hz] %zu\n",aux_frequency );
         fprintf(file2,"#GAIN[dB] %f\n",aux_gain/10.0 );
         fprintf(file2,"#SAMP[Hz] %f\n",aux_sample_rate );
@@ -227,6 +303,8 @@ strcpy(filename3,filename2);
         fprintf(file2,"#REPS[n] %d\n",reps);
         fprintf(file2,"#LST[ZENITH] %02d%02d%02d\n",s_hour,s_min,s_sec);
         fprintf(file2,"#LSA[ZENITH] %03.03f\n",s_t);
+	fprintf(file2,"#PPM %d\n",ppm_aux);
+	fprintf(file2,"#SERIAL %s\n", conf.serial);
 	/* Reset endpoint before we start reading from it (mandatory) */ 
 	//Grab some samples
 	fprintf(stderr, "Reading samples in sync mode...\n");
@@ -254,6 +332,14 @@ strcpy(filename3,filename2);
 				if(debug)printf("End sync read\n");
 				n_read = bytes_to_read;
 				do_exit = 1;
+				if(raw_out)
+				{
+					if (fwrite(buf, 1, n_read, file_raw) != (size_t)n_read) 
+						{
+						fprintf(stderr, "Short write, samples lost, exiting!\n");
+						break;
+						}				
+				}
 				/*take fourier transform*/
 				pts=FFTs;
 				p_num=(n_read+1)/pts/2;
@@ -265,9 +351,9 @@ strcpy(filename3,filename2);
 						{
 						dats[s]=(float)buf[s+(count*2*FFTs)]+0.0; 
 						if(dats[s]>127)
-							dats[s]=(dats[s]-127.5)/128.0;
+							dats[s]=(dats[s]-127.4)/128.0; //127.5 
 						else 
-							dats[s]=(dats[s]-127.5)/128.0;
+							dats[s]=(dats[s]-127.4)/128.0; //127.5
 						}
 					count++;
 					four(dats-1,FFTs,-1);
@@ -275,11 +361,11 @@ strcpy(filename3,filename2);
 					}
 					//End FFT routines...				
 				}
-			if ((bytes_to_read)!= (uint32_t)n_read) 
-				{ 
-				fprintf(stderr, "Short write, samples lost, exiting!\n");
-				break;
-				}
+			//if ((bytes_to_read)!= (uint32_t)n_read) 
+			//	{ 
+			//	fprintf(stderr, "Short write, samples lost, exiting!\n");
+			//	break;
+			//	}
 			}
 		}
 	rtlsdr_close(0);
@@ -290,6 +376,7 @@ strcpy(filename3,filename2);
     if(debug)printf("Finished in about %.0f seconds. \n", difftime(stop, start));
 	fclose(file);
 	fclose(file2);
+	if(raw_out)fclose(file_raw);
 	//free(buf);
 	exit(0);
 }
@@ -360,8 +447,9 @@ void out_dat(void)
 {
 int tt;
 float opp,aux=0,aux1=0;
-uint32_t f_init,f_step;
-f_init=aux_frequency-(aux_sample_rate/2);
+uint32_t f_init,f_step,f_aux11=0;
+//f_aux11=(ppm_aux*aux_frequency)/1e6;
+f_init=(aux_frequency+f_aux11)-(aux_sample_rate/2);
 f_step=aux_sample_rate/pts;
 if(debug)printf("OUT to FILE\n");
 for(tt=0;tt<pts;tt++)
@@ -498,4 +586,55 @@ if(finite(avg_tp))
 free(aux1);
 free(aux2);
 }
+void dump_config(rtlsdr_config_t *conf)
+{
+fprintf(stderr, "__________________________________________\n");
+fprintf(stderr, "Vendor ID:\t\t0x%04x\n", conf->vendor_id);
+fprintf(stderr, "Product ID:\t\t0x%04x\n", conf->product_id);
+fprintf(stderr, "Manufacturer:\t\t%s\n", conf->manufacturer);
+fprintf(stderr, "Product:\t\t%s\n", conf->product);
+fprintf(stderr, "Serial number:\t\t%s\n", conf->serial);
+fprintf(stderr, "Serial number enabled:\t");
+fprintf(stderr, conf->have_serial ? "yes\n": "no\n");
+fprintf(stderr, "IR endpoint enabled:\t");
+fprintf(stderr, conf->enable_ir ? "yes\n": "no\n");
+fprintf(stderr, "Remote wakeup enabled:\t");
+fprintf(stderr, conf->remote_wakeup ? "yes\n": "no\n");
+fprintf(stderr, "__________________________________________\n");
+}
 
+int parse_eeprom_to_conf(rtlsdr_config_t *conf, uint8_t *dat)
+{
+int pos;
+
+if ((dat[0] != 0x28) || (dat[1] != 0x32))
+fprintf(stderr, "Error: invalid RTL2832 EEPROM header!\n");
+
+conf->vendor_id = dat[2] | (dat[3] << 8);
+conf->product_id = dat[4] | (dat[5] << 8);
+conf->have_serial = (dat[6] == 0xa5) ? 1 : 0;
+conf->remote_wakeup = (dat[7] & 0x01) ? 1 : 0;
+conf->enable_ir = (dat[7] & 0x02) ? 1 : 0;
+
+pos = get_string_descriptor(STR_OFFSET, dat, conf->manufacturer);
+pos = get_string_descriptor(pos, dat, conf->product);
+get_string_descriptor(pos, dat, conf->serial);
+
+return 0;
+}
+int get_string_descriptor(int pos, uint8_t *data, char *str)
+{
+int len, i, j = 0;
+
+len = data[pos];
+
+if (data[pos + 1] != 0x03)
+fprintf(stderr, "Error: invalid string descriptor!\n");
+
+for (i = 2; i < len; i += 2)
+str[j++] = data[pos + i];
+
+str[j] = 0x00;
+
+return pos + i;
+}

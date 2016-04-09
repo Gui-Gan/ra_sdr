@@ -1,7 +1,7 @@
 CC = gcc
-CFLAGS = -lrtlsdr -lfftw3 -lm -Wall
+CFLAGS = -Wall
 CFLAGS += -DVERBOSE_MODE
-LIBS=  
+LIBS= -lrtlsdr -lfftw3 -lm
 
 all: ra_sdr
 

@@ -11,3 +11,18 @@ Example:
 ./ra_sdr -f 40000000 -s 2000000 -g 10 -i 12 -v 1 -d 0 data_out.txt
 
 Not Fully tested....
+
+### Dependencies
+
+#### fftw3.h
+Can be found at:
+http://www.fftw.org/download.html
+
+Unpack and following instructions in README:
+
+$ ./configure
+$ make
+$ sudo make install
+
+#### rtl-sdr.h
+apt-get install librtlsdr-dev
